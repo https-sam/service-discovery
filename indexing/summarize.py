@@ -24,15 +24,66 @@ Files:
 {files}
 """
 
+SKIP_DIRS = {
+    "node_modules", "vendor", "target", "build", "dist", "out", "bin", "obj",
+    "__pycache__", ".git", ".venv", "venv", ".gradle", ".idea", ".vscode",
+    "genproto",
+}
 
-def collect_files(service_dir):
-    out = []
+GENERATED_SUFFIXES = (
+    "_pb2.py", "_pb2_grpc.py",
+    ".pb.go",
+    ".pb.cc", ".pb.h",
+)
+
+MAX_FILE_BYTES = 100_000
+
+
+def is_binary(path):
+    try:
+        with open(path, "rb") as f:
+            return b"\x00" in f.read(8192)
+    except OSError:
+        return True
+
+
+def is_relevant(path):
+    if any(part in SKIP_DIRS for part in path.parts):
+        return False
+    if path.name.startswith("."):
+        return False
+    if path.name.endswith(GENERATED_SUFFIXES):
+        return False
+    if path.name in {"package-lock.json", "yarn.lock", "go.sum", "Cargo.lock"}:
+        return False
+    return True
+
+
+def collect_files(service_dir, repo_root):
+    paths = []
     for p in service_dir.rglob("*"):
-        if p.is_file():
-            try:
-                out.append((p.relative_to(service_dir), p.read_text(errors="replace")))
-            except OSError:
-                continue
+        if p.is_file() and is_relevant(p.relative_to(service_dir)):
+            paths.append(p)
+    for proto in repo_root.rglob("*.proto"):
+        if not proto.is_file():
+            continue
+        if proto.is_relative_to(service_dir):
+            continue
+        if any(part in SKIP_DIRS for part in proto.relative_to(repo_root).parts):
+            continue
+        paths.append(proto)
+    out = []
+    for p in sorted(set(paths)):
+        if p.stat().st_size > MAX_FILE_BYTES:
+            continue
+        if is_binary(p):
+            continue
+        try:
+            text = p.read_text(errors="replace")
+        except (OSError, UnicodeDecodeError):
+            continue
+        label = p.relative_to(repo_root) if p.is_relative_to(repo_root) else p
+        out.append((label, text))
     return out
 
 
@@ -65,7 +116,7 @@ def main():
 
     for service_dir in services:
         name = service_dir.name
-        files = collect_files(service_dir)
+        files = collect_files(service_dir, args.repo_path)
         if not files:
             continue
         summary = summarize(client, args.model, name, files)
