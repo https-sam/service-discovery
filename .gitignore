@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# uv
+uv.lock
+
+# Env / secrets
+.env
+
+# Working data
+data/
+
+# Generated eval outputs
+eval/eval_results.csv
+
+# OS
+.DS_Store
