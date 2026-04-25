@@ -1,4 +1,4 @@
-"""Embedding + cosine retrieval primitives."""
+"""Embedding + cosine retrieval primitives, with multi-query expansion."""
 
 from __future__ import annotations
 
@@ -13,6 +13,26 @@ from google.genai import types
 EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
 QUERY_TASK = "RETRIEVAL_QUERY"
+EXPANSION_MODEL = "gemini-2.5-flash"
+
+
+EXPANSION_PROMPT = """Generate {n} alternative phrasings of the user's query
+to broaden retrieval coverage. Return ONLY a JSON array of {n} strings.
+
+User query: {query}
+"""
+
+
+def expand_query(client, query, n):
+    response = client.models.generate_content(
+        model=EXPANSION_MODEL,
+        contents=EXPANSION_PROMPT.format(query=query, n=n),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema={"type": "array", "items": {"type": "string"}},
+        ),
+    )
+    return json.loads(response.text)
 
 
 def embed_query(client, text):
@@ -28,7 +48,6 @@ def embed_query(client, text):
 
 
 def cosine_top_k(query_vec, doc_matrix, k):
-    """Top-K cosine similarity. Inputs are L2-normalized so dot is cosine."""
     scores = doc_matrix @ query_vec
     idx = np.argpartition(-scores, min(k, len(scores) - 1))[:k]
     idx = idx[np.argsort(-scores[idx])]
