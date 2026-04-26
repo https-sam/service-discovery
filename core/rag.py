@@ -1,4 +1,4 @@
-"""Embedding + cosine retrieval primitives, with multi-query expansion."""
+"""Embedding + cosine retrieval primitives, multi-query, RRF fusion."""
 
 from __future__ import annotations
 
@@ -53,6 +53,19 @@ def cosine_top_k(query_vec, doc_matrix, k):
     idx = idx[np.argsort(-scores[idx])]
     return [(int(i), float(scores[i])) for i in idx]
 
+
+
+def rrf_fuse(rankings, k_const=60):
+    """Reciprocal Rank Fusion across multiple rankings.
+
+    Each chunk's fused score is the sum of 1 / (k_const + rank_in_each_list).
+    k_const=60 is the value from the original RRF paper.
+    """
+    fused = {}
+    for ranking in rankings:
+        for rank, (idx, _) in enumerate(ranking):
+            fused[idx] = fused.get(idx, 0.0) + 1.0 / (k_const + rank + 1)
+    return sorted(fused.items(), key=lambda x: -x[1])
 
 def load_index(path):
     index = json.loads(Path(path).read_text())
