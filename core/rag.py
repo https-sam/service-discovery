@@ -1,4 +1,4 @@
-"""Embedding + cosine retrieval primitives, multi-query, RRF fusion."""
+"""Embedding + cosine retrieval, multi-query, RRF, plus answer generation."""
 
 from __future__ import annotations
 
@@ -14,12 +14,27 @@ EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
 QUERY_TASK = "RETRIEVAL_QUERY"
 EXPANSION_MODEL = "gemini-2.5-flash"
+ANSWER_MODEL = "gemini-2.5-flash"
 
 
 EXPANSION_PROMPT = """Generate {n} alternative phrasings of the user's query
 to broaden retrieval coverage. Return ONLY a JSON array of {n} strings.
 
 User query: {query}
+"""
+
+
+
+ANSWER_PROMPT = """Answer the user's question about a microservice catalog
+using ONLY the sources below. Be concise.
+
+Cite sources inline with [N]. If the sources don't contain enough information,
+say so.
+
+Question: {query}
+
+Sources:
+{sources}
 """
 
 
@@ -33,6 +48,21 @@ def expand_query(client, query, n):
         ),
     )
     return json.loads(response.text)
+
+
+
+def _build_answer_prompt(query, hits):
+    sources = "\n\n".join(
+        f"[{n}] {c['service_name']} · {c['section']}\n{c['text']}"
+        for n, c in hits
+    )
+    return ANSWER_PROMPT.format(query=query, sources=sources)
+
+
+def generate_answer(client, query, hits):
+    prompt = _build_answer_prompt(query, hits)
+    response = client.models.generate_content(model=ANSWER_MODEL, contents=prompt)
+    return response.text
 
 
 def embed_query(client, text):
