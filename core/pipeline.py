@@ -20,7 +20,7 @@ from .rag import (
     embed_query,
     expand_query,
     rrf_fuse,
-    generate_answer,
+    generate_answer_stream,
 )
 
 
@@ -134,10 +134,12 @@ def answer_node(state):
     _emit(state, "step_started", {"id": "answer", "label": "answer synthesis"})
     hits = state["hits"]
     hits_for_prompt = [(h["rank"], h) for h in hits]
-    answer = generate_answer(state["client"], state["query"], hits_for_prompt)
-    _emit(state, "answer_token", {"text": answer})
+    buf = []
+    for delta in generate_answer_stream(state["client"], state["query"], hits_for_prompt):
+        buf.append(delta)
+        _emit(state, "answer_token", {"text": delta})
     _emit(state, "step_done", {"id": "answer"})
-    return {"answer": answer}
+    return {"answer": "".join(buf)}
 
 
 def build_graph():

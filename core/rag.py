@@ -65,6 +65,16 @@ def generate_answer(client, query, hits):
     return response.text
 
 
+def generate_answer_stream(client, query, hits):
+    """Yield text deltas as Gemini emits them, for SSE streaming to a UI."""
+    prompt = _build_answer_prompt(query, hits)
+    for chunk in client.models.generate_content_stream(
+        model=ANSWER_MODEL, contents=prompt
+    ):
+        if chunk.text:
+            yield chunk.text
+
+
 def embed_query(client, text):
     result = client.models.embed_content(
         model=EMBED_MODEL,
