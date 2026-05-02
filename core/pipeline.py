@@ -130,6 +130,46 @@ def open_retrieve_node(state):
     return {"expansions": expansions, "hits": hits}
 
 
+def _matches(chunk, flt):
+    for field, expected in flt.items():
+        if chunk.get(field) != expected:
+            return False
+    return True
+
+
+def scoped_retrieve_node(state):
+    chunks = state["chunks"]
+    flt = state["filter"]
+    client = state["client"]
+
+    _emit(state, "step_started", {"id": "filter", "label": "metadata filter"})
+    subset_idx = [i for i, c in enumerate(chunks) if _matches(c, flt)]
+    _emit(state, "step_done", {"id": "filter",
+                               "data": {"filter": flt,
+                                        "matched_chunks": len(subset_idx)}})
+
+    _emit(state, "step_started", {"id": "embed", "label": "embed query"})
+    qv = embed_query(client, state["query"])
+    _emit(state, "step_done", {"id": "embed", "data": {"count": 1}})
+
+    _emit(state, "step_started", {"id": "retrieve",
+                                  "label": "rank within filter"})
+    subset_matrix = state["doc_matrix"][subset_idx]
+    local = cosine_top_k(qv, subset_matrix, min(5, len(subset_idx)))
+    hits = [
+        {**_strip_vector(chunks[subset_idx[i]]),
+         "rank": rank,
+         "rrf_score": round(score, 4)}
+        for rank, (i, score) in enumerate(local, 1)
+    ]
+    _emit(state, "step_done", {"id": "retrieve", "data": {"hits": hits}})
+    return {"hits": hits}
+
+
+def route_after_classify(state):
+    return state["strategy"]
+
+
 def answer_node(state):
     _emit(state, "step_started", {"id": "answer", "label": "answer synthesis"})
     hits = state["hits"]
@@ -146,9 +186,19 @@ def build_graph():
     g = StateGraph(State)
     g.add_node("classify", classify_node)
     g.add_node("open_retrieve", open_retrieve_node)
+    g.add_node("scoped_retrieve", scoped_retrieve_node)
     g.add_node("answer", answer_node)
     g.set_entry_point("classify")
-    g.add_edge("classify", "open_retrieve")
+    g.add_conditional_edges(
+        "classify",
+        route_after_classify,
+        {
+            "open": "open_retrieve",
+            "scoped": "scoped_retrieve",
+            "aggregate": "open_retrieve",  # fallback until aggregate route ships
+        },
+    )
     g.add_edge("open_retrieve", "answer")
+    g.add_edge("scoped_retrieve", "answer")
     g.add_edge("answer", END)
     return g.compile()
