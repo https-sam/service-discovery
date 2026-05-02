@@ -239,9 +239,32 @@
     vertical-align: super;
     line-height: 1;
     margin-left: 0.1em;
+    cursor: pointer;
+    transition: background 120ms ease;
+    border-radius: 2px;
+    padding: 0 0.15em;
   }
 
-.cite-popover-meta {
+  .cite:hover,
+  .cite.active {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .cite-popover {
+    position: absolute;
+    z-index: 10;
+    max-width: 440px;
+    background: var(--bg);
+    border: 1px solid var(--ink);
+    padding: 1rem 1.25rem 1.1rem;
+    font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    box-shadow: 0 6px 24px rgba(26, 26, 26, 0.08);
+  }
+
+  .cite-popover-meta {
     font-family: 'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
     font-size: 0.7rem;
     letter-spacing: 0.14em;
@@ -252,7 +275,12 @@
     border-bottom: 1px solid var(--rule);
   }
 
-.cite-popover-text {
+  .cite-popover-meta .num {
+    color: var(--accent);
+    margin-right: 0.5em;
+  }
+
+  .cite-popover-text {
     color: var(--ink);
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -313,9 +341,13 @@
   let currentSource = null;
   let currentHits = [];
   let stepCount = 0;
+  let activePopover = null;
+  let popoverDismiss = null;
+  let activeCite = null;
 
   function reset() {
     if (currentSource) currentSource.close();
+    closePopover();
     answerBuffer = '';
     answerBody.innerHTML = '';
     answerEl.classList.add('hidden');
@@ -494,6 +526,77 @@
     });
   });
 
+  // Citation popovers - click a [N] to inspect the underlying chunk.
+  // Event delegation so it survives the answerBody.innerHTML rewrites
+  // that happen on every streamed token.
+  answerBody.addEventListener('click', (ev) => {
+    const cite = ev.target.closest('.cite');
+    if (!cite) return;
+    ev.stopPropagation();
+    const match = cite.textContent.match(/\d+/);
+    if (!match) return;
+    const n = parseInt(match[0], 10);
+    if (activeCite === cite) {
+      closePopover();
+      return;
+    }
+    showCitePopover(cite, n);
+  });
+
+  function showCitePopover(anchor, n) {
+    closePopover();
+    const hit = currentHits[n - 1];
+    if (!hit) return;
+
+    const pop = document.createElement('div');
+    pop.className = 'cite-popover';
+    pop.innerHTML = `
+      <div class="cite-popover-meta">
+        <span class="num">[${n}]</span>${escapeHtml(hit.service_name)} · ${escapeHtml(hit.section)}
+      </div>
+      <div class="cite-popover-text">${escapeHtml(hit.text)}</div>
+    `;
+    document.body.appendChild(pop);
+
+    // Position below the anchor, clamped to the viewport.
+    const rect = anchor.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    const margin = 12;
+    let top = window.scrollY + rect.bottom + 8;
+    let left = window.scrollX + rect.left - 24;
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - popRect.width - margin;
+    if (left > maxLeft) left = maxLeft;
+    if (left < window.scrollX + margin) left = window.scrollX + margin;
+    pop.style.top = top + 'px';
+    pop.style.left = left + 'px';
+
+    activePopover = pop;
+    activeCite = anchor;
+    anchor.classList.add('active');
+
+    popoverDismiss = (e) => {
+      if (e.target.closest('.cite-popover') || e.target.closest('.cite')) return;
+      closePopover();
+    };
+    setTimeout(() => document.addEventListener('click', popoverDismiss), 0);
+  }
+
+  function closePopover() {
+    if (activePopover) {
+      activePopover.remove();
+      activePopover = null;
+    }
+    if (activeCite) {
+      activeCite.classList.remove('active');
+      activeCite = null;
+    }
+    if (popoverDismiss) {
+      document.removeEventListener('click', popoverDismiss);
+      popoverDismiss = null;
+    }
+  }
+
+  window.addEventListener('resize', closePopover);
 </script>
 </body>
 </html>
