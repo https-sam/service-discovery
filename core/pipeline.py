@@ -166,6 +166,21 @@ def scoped_retrieve_node(state):
     return {"hits": hits}
 
 
+def aggregate_retrieve_node(state):
+    chunks = state["chunks"]
+    flt = state["filter"]
+
+    _emit(state, "step_started", {"id": "filter", "label": "metadata filter"})
+    subset = [c for c in chunks if _matches(c, flt)]
+    hits = [
+        {**_strip_vector(c), "rank": i, "rrf_score": None}
+        for i, c in enumerate(subset, 1)
+    ]
+    _emit(state, "step_done", {"id": "filter",
+                               "data": {"filter": flt, "hits": hits}})
+    return {"hits": hits}
+
+
 def route_after_classify(state):
     return state["strategy"]
 
@@ -187,6 +202,7 @@ def build_graph():
     g.add_node("classify", classify_node)
     g.add_node("open_retrieve", open_retrieve_node)
     g.add_node("scoped_retrieve", scoped_retrieve_node)
+    g.add_node("aggregate_retrieve", aggregate_retrieve_node)
     g.add_node("answer", answer_node)
     g.set_entry_point("classify")
     g.add_conditional_edges(
@@ -195,10 +211,11 @@ def build_graph():
         {
             "open": "open_retrieve",
             "scoped": "scoped_retrieve",
-            "aggregate": "open_retrieve",  # fallback until aggregate route ships
+            "aggregate": "aggregate_retrieve",
         },
     )
     g.add_edge("open_retrieve", "answer")
     g.add_edge("scoped_retrieve", "answer")
+    g.add_edge("aggregate_retrieve", "answer")
     g.add_edge("answer", END)
     return g.compile()
