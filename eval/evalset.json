@@ -1,0 +1,22 @@
+[
+  {
+    "query": "what does cartservice do and what does it talk to?",
+    "reference": "The cartservice manages users' shopping carts. It supports multiple storage backends including Redis, Google Cloud Spanner, and AlloyDB, and uses Google Cloud Secret Manager for credentials. It does not call any other internal microservices."
+  },
+  {
+    "query": "what is the role of the frontend service?",
+    "reference": "The frontend is the user-facing HTTP web application, written in Go. It serves HTML templates and static assets, and forwards user actions to the various backend microservices over gRPC."
+  },
+  {
+    "query": "what does the checkoutservice do?",
+    "reference": "The checkoutservice orchestrates the final purchase flow. It calls cartservice, productcatalogservice, currencyservice, paymentservice, shippingservice, and emailservice."
+  },
+  {
+    "query": "what does the recommendation service depend on?",
+    "reference": "The recommendationservice calls the productcatalogservice to fetch product details. Communication is via gRPC."
+  },
+  {
+    "query": "which services handle currency conversion?",
+    "reference": "The currencyservice handles currency conversion. It exposes a gRPC API for converting between currencies, and is consumed by the frontend and checkoutservice."
+  }
+]
