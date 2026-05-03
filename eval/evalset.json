@@ -1,7 +1,7 @@
 [
   {
     "query": "what does cartservice do and what does it talk to?",
-    "reference": "The cartservice manages users' shopping carts. It supports multiple storage backends including Redis, Google Cloud Spanner, and AlloyDB, and uses Google Cloud Secret Manager for credentials. It does not call any other internal microservices."
+    "reference": "The cartservice manages users' shopping carts - adding, retrieving, and emptying carts. It supports multiple storage backends including Redis, Google Cloud Spanner, and AlloyDB, and uses Google Cloud Secret Manager for credentials. It does not call any other internal microservices."
   },
   {
     "query": "what is the role of the frontend service?",
@@ -9,14 +9,34 @@
   },
   {
     "query": "what does the checkoutservice do?",
-    "reference": "The checkoutservice orchestrates the final purchase flow. It calls cartservice, productcatalogservice, currencyservice, paymentservice, shippingservice, and emailservice."
+    "reference": "The checkoutservice orchestrates the final purchase flow. It calls cartservice (to fetch and empty the cart), productcatalogservice, currencyservice, paymentservice, shippingservice, and emailservice - coordinating these to complete an order."
   },
   {
     "query": "what does the recommendation service depend on?",
-    "reference": "The recommendationservice calls the productcatalogservice to fetch product details. Communication is via gRPC."
+    "reference": "The recommendationservice calls the productcatalogservice to fetch product details, then ranks products to recommend. Communication is via gRPC."
   },
   {
     "query": "which services handle currency conversion?",
-    "reference": "The currencyservice handles currency conversion. It exposes a gRPC API for converting between currencies, and is consumed by the frontend and checkoutservice."
+    "reference": "The currencyservice handles currency conversion. It exposes a gRPC API for converting between currencies and listing supported ones, and is consumed by the frontend and checkoutservice."
+  },
+  {
+    "query": "what microservices are in this system?",
+    "reference": "The system has 12 microservices: adservice serves contextual advertisements; cartservice manages user shopping carts; checkoutservice orchestrates the purchase flow; currencyservice converts between currencies; emailservice sends order confirmation emails; frontend is the user-facing web application; loadgenerator simulates user traffic; paymentservice validates credit cards and charges amounts; productcatalogservice serves the product listings; recommendationservice generates product suggestions; shippingservice handles shipping quotes and order shipment; shoppingassistantservice provides an AI-powered shopping assistant."
+  },
+  {
+    "query": "what does the paymentservice do?",
+    "reference": "The paymentservice is a Node.js microservice that validates credit card information and simulates charging a given amount, returning a transaction ID. It communicates via gRPC and is called by the checkoutservice during order completion. It does not persist payment data or call other internal services."
+  },
+  {
+    "query": "what APIs does productcatalogservice expose?",
+    "reference": "productcatalogservice exposes gRPC methods: ListProducts (returns the full catalog), GetProduct (fetches details for one product by ID), and SearchProducts (searches by name or description). It also implements the standard gRPC health-check endpoint."
+  },
+  {
+    "query": "what does adservice do?",
+    "reference": "The adservice is a Java microservice that serves ads based on contextual keywords in a request. If no keywords match or none are provided, it returns random ads. It's consumed by the frontend to display ads on the product pages."
+  },
+  {
+    "query": "which services depend on the cartservice?",
+    "reference": "The checkoutservice depends on cartservice (calls GetCart and EmptyCart during order processing). The frontend also calls cartservice directly to add items and display cart contents. No other services depend on it."
   }
 ]
