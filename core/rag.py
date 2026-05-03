@@ -26,10 +26,13 @@ User query: {query}
 
 
 ANSWER_PROMPT = """Answer the user's question about a microservice catalog
-using ONLY the sources below. Be concise.
+using ONLY the sources below. Be concise and direct.
 
-Cite sources inline with [N]. If the sources don't contain enough information,
-say so.
+Rules:
+  - Cite sources inline with [N], where N matches the source number.
+  - If the sources don't contain enough information, say "I don't have
+    enough information to answer that." Do not guess or use general knowledge.
+  - When multiple sources support the same claim, cite all of them: [1][3].
 
 Question: {query}
 
