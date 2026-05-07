@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Run the open-route RAG pipeline over an evalset and score with RAGAS."""
+"""Run the RAG pipeline over an evalset and score with RAGAS.
+
+Four metrics cover the two RAG failure surfaces:
+
+    RETRIEVAL                              GENERATION
+    ─────────                              ──────────
+    LLMContextPrecisionWithReference       Faithfulness
+    LLMContextRecall                       ResponseRelevancy
+
+Each is computed by an LLM judge (the same backend the pipeline uses). Higher
+is better; scores are in [0, 1]. Faithfulness, for example, asks: "for
+each claim in the answer, is it grounded in at least one retrieved chunk?"
+"""
 
 from __future__ import annotations
 
@@ -9,10 +21,10 @@ import os
 import sys
 from pathlib import Path
 
+# Make the project root importable when this script is run as `python scripts/eval.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from ragas import EvaluationDataset, evaluate
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
@@ -24,36 +36,50 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 
-from core.rag import (
-    cosine_top_k, embed_query, expand_query, generate_answer, load_index, rrf_fuse,
-)
 from google import genai
 
+from queue import Queue
 
-JUDGE_MODEL = "gemini-2.5-flash"
-
-
-def run_open(query, chunks, doc_matrix, client):
-    expansions = expand_query(client, query, 4)
-    queries = [query] + expansions
-    query_vecs = [embed_query(client, q) for q in queries]
-    rankings = [cosine_top_k(qv, doc_matrix, 10) for qv in query_vecs]
-    fused = rrf_fuse(rankings)[:5]
-    hits = [
-        {**chunks[idx], "rank": rank, "rrf_score": score}
-        for rank, (idx, score) in enumerate(fused, 1)
-    ]
-    hits_for_prompt = [(h["rank"], h) for h in hits]
-    answer = generate_answer(client, query, hits_for_prompt)
-    return {"hits": hits, "answer": answer}
+from core.pipeline import build_graph
+from core.rag import build_client, get_backend, load_index
 
 
-def main():
-    parser = argparse.ArgumentParser()
+JUDGE_MODEL = "gemini-2.5-flash"  # GA, fast, higher quota - judge ≠ pipeline-under-test
+JUDGE_EMBED_MODEL_VERTEX = "text-embedding-004"
+JUDGE_EMBED_MODEL_GEMINI = "models/gemini-embedding-001"
+
+
+def _build_judge():
+    """Pick the LangChain LLM + embedding wrappers for the current backend."""
+    if get_backend() == "vertex":
+        from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+        project = os.environ["GOOGLE_CLOUD_PROJECT"]
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        llm = ChatVertexAI(model_name=JUDGE_MODEL, project=project, location=location)
+        emb = VertexAIEmbeddings(
+            model_name=JUDGE_EMBED_MODEL_VERTEX, project=project, location=location
+        )
+    else:
+        from langchain_google_genai import (
+            ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings,
+        )
+        api_key = os.environ["GEMINI_API_KEY"]
+        llm = ChatGoogleGenerativeAI(model=JUDGE_MODEL, google_api_key=api_key)
+        emb = GoogleGenerativeAIEmbeddings(
+            model=JUDGE_EMBED_MODEL_GEMINI, google_api_key=api_key
+        )
+    return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(emb)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evalset", type=Path, default=Path("eval/evalset.json"))
     parser.add_argument("--index", type=Path, default=Path("data/index.json"))
     parser.add_argument("--output", type=Path, default=Path("eval/eval_results.csv"))
-    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Run only the first N queries (for fast iteration).")
+    parser.add_argument("--max-workers", type=int, default=2,
+                        help="Parallelism for RAGAS judge calls.")
     args = parser.parse_args()
 
     load_dotenv(override=False)
@@ -61,48 +87,77 @@ def main():
     evalset = json.loads(args.evalset.read_text())
     if args.limit:
         evalset = evalset[:args.limit]
-    print(f"-> {len(evalset)} queries")
+    print(f"→ evalset: {len(evalset)} queries from {args.evalset}")
 
+    # 1. Run the FULL pipeline once per query - same code path the web UI uses,
+    # so eval measures what users actually experience (classifier + routed
+    # retrieval, not the open-route-only `run_query` shortcut).
     chunks, doc_matrix = load_index(args.index)
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = build_client()
+    graph = build_graph()
+    print(f"→ backend: {get_backend()}")
 
     samples = []
     for i, item in enumerate(evalset, 1):
         print(f"  [{i}/{len(evalset)}] {item['query'][:60]}")
-        result = run_open(item["query"], chunks, doc_matrix, client)
+        # The graph emits SSE events to a queue for the streaming UI.
+        # In batch eval we don't need them; pass a queue and drain it.
+        sink: Queue = Queue()
+        state = graph.invoke({
+            "query": item["query"],
+            "chunks": chunks,
+            "doc_matrix": doc_matrix,
+            "client": client,
+            "event_queue": sink,
+        })
+        # The router decides the strategy; we just take whatever hits + answer
+        # came out the other side.
+        strategy = state.get("strategy", "open")
+        hits = state.get("hits", [])
+        answer = state.get("answer", "")
+        print(f"      strategy={strategy}  hits={len(hits)}")
         samples.append({
             "user_input": item["query"],
-            "response": result["answer"],
-            "retrieved_contexts": [h["text"] for h in result["hits"]],
+            "response": answer,
+            "retrieved_contexts": [h["text"] for h in hits],
             "reference": item.get("reference", ""),
         })
 
-    api_key = os.environ["GEMINI_API_KEY"]
-    judge_llm = LangchainLLMWrapper(
-        ChatGoogleGenerativeAI(model=JUDGE_MODEL, google_api_key=api_key)
-    )
-    judge_emb = LangchainEmbeddingsWrapper(
-        GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001", google_api_key=api_key,
-        )
-    )
+    # 2. Score with RAGAS. The judge LLM + similarity-embedding model follow
+    # the same backend as the rest of the pipeline.
+    judge_llm, judge_embeddings = _build_judge()
 
     dataset = EvaluationDataset.from_list(samples)
+
+    print(f"\n→ scoring {len(samples)} samples with RAGAS (judge={JUDGE_MODEL})")
     results = evaluate(
         dataset=dataset,
         metrics=[
-            LLMContextPrecisionWithReference(),
-            LLMContextRecall(),
-            Faithfulness(),
-            ResponseRelevancy(),
+            # Retrieval-side
+            LLMContextPrecisionWithReference(),  # are the relevant contexts at the top?
+            LLMContextRecall(),                  # do the contexts cover what the reference needs?
+            # Generation-side
+            Faithfulness(),                      # is every claim grounded in the contexts?
+            ResponseRelevancy(),                 # does the answer actually address the question?
         ],
         llm=judge_llm,
-        embeddings=judge_emb,
-        run_config=RunConfig(max_workers=2),
+        embeddings=judge_embeddings,
+        run_config=RunConfig(max_workers=args.max_workers),
     )
+
+    # 3. Print + persist.
     df = results.to_pandas()
+    print("\n→ Per-query scores:\n")
+    print(df.to_string(index=False))
+
+    print("\n→ Aggregate (mean across queries):\n")
+    metric_cols = [c for c in df.columns if c not in
+                   ("user_input", "response", "retrieved_contexts", "reference")]
+    for col in metric_cols:
+        print(f"  {col:50s}  {df[col].mean():.3f}")
+
     df.to_csv(args.output, index=False)
-    print(f"-> wrote {args.output}")
+    print(f"\n→ wrote {args.output}")
     return 0
 
 
