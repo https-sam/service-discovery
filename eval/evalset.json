@@ -41,11 +41,11 @@
   },
   {
     "query": "what programming languages are used across the services?",
-    "reference": "The system has 12 microservices: adservice (Java), cartservice (C#), checkoutservice (Go), currencyservice (Node.js), emailservice (Python), frontend (Go), loadgenerator (Python/Locust), paymentservice (Node.js), productcatalogservice (Go), recommendationservice (Python), shippingservice (Go), and shoppingassistantservice (Python). The frontend is user-facing; checkoutservice orchestrates the purchase flow; the rest are backend services exposing gRPC APIs."
+    "reference": "adservice is written in Java. cartservice is written in C#. checkoutservice is written in Go. currencyservice is written in Node.js. emailservice is written in Python. frontend is written in Go. loadgenerator is written in Python. paymentservice is written in Node.js. productcatalogservice is written in Go. recommendationservice is written in Python. shippingservice is written in Go. shoppingassistantservice is written in Python."
   },
   {
     "query": "list every gRPC API exposed by the system",
-    "reference": "The system spans five languages: Go (frontend, checkoutservice, productcatalogservice, shippingservice), Python (emailservice, loadgenerator, recommendationservice, shoppingassistantservice), Java (adservice), Node.js (currencyservice, paymentservice), and C# (cartservice)."
+    "reference": "Each backend service exposes a gRPC API: adservice (GetAds), cartservice (AddItem, GetCart, EmptyCart), checkoutservice (PlaceOrder), currencyservice (GetSupportedCurrencies, Convert), emailservice (SendOrderConfirmation), paymentservice (Charge), productcatalogservice (ListProducts, GetProduct, SearchProducts), recommendationservice (ListRecommendations), shippingservice (GetQuote, ShipOrder). All also implement the standard gRPC health-check endpoint."
   },
   {
     "query": "what storage backends and databases are used in the system?",
@@ -53,6 +53,6 @@
   },
   {
     "query": "give me an overview of every service in the system",
-    "reference": "adservice serves contextual ads; cartservice manages shopping carts; checkoutservice orchestrates the purchase flow; currencyservice converts between currencies; emailservice sends order confirmation emails; frontend is the user-facing Go web app; loadgenerator simulates user traffic via Locust; paymentservice validates and charges credit cards (simulated); productcatalogservice serves the product catalog; recommendationservice ranks recommended products; shippingservice quotes and ships orders; shoppingassistantservice provides a chatbot interface."
+    "reference": "adservice serves contextual advertisements. cartservice manages user shopping carts. checkoutservice orchestrates the purchase flow. currencyservice converts between currencies and lists supported currencies. emailservice sends order confirmation emails. frontend is the user-facing web application. loadgenerator simulates user traffic. paymentservice validates credit cards and processes payments. productcatalogservice serves the product listings. recommendationservice generates product suggestions. shippingservice handles shipping quotes and order shipment. shoppingassistantservice provides an AI-powered shopping assistant."
   }
 ]
