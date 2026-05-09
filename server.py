@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
 from queue import Empty, Queue
@@ -9,18 +8,18 @@ from queue import Empty, Queue
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
-from google import genai
 
 from core.pipeline import build_graph
-from core.rag import load_index
+from core.rag import build_client, get_backend, load_index
 
 
 load_dotenv(override=False)
 
-_CLIENT = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+_CLIENT = build_client()
 _CHUNKS, _DOC_MATRIX = load_index(Path("data/index.json"))
 _GRAPH = build_graph()
 
+print(f"→ backend: {get_backend()} · {len(_CHUNKS)} chunks loaded")
 
 
 app = FastAPI()

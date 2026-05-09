@@ -22,16 +22,20 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Make the project root importable when this script is run from any cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+from core.rag import build_client, get_backend
 
 
 EMBED_MODEL = "gemini-embedding-001"
@@ -126,7 +130,8 @@ def main() -> int:
 
     # 2. Embed. Contextual prefix is prepended *only for the embedding call*; the
     # stored `text` stays clean so callers can quote it verbatim.
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = build_client()
+    print(f"→ backend: {get_backend()}")
 
     interval = 60.0 / args.rpm
 

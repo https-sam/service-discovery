@@ -36,8 +36,6 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 
-from google import genai
-
 from queue import Queue
 
 from core.pipeline import build_graph

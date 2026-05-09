@@ -9,13 +9,17 @@ source) and ask Gemini to write a single summary document.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+# Make the project root importable when this script is run from any cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from dotenv import load_dotenv
 from google import genai
+
+from core.rag import build_client, get_backend
 
 
 PROMPT = """You are documenting a microservice from a polyglot demo repo so
@@ -161,7 +165,8 @@ def main() -> int:
         print(f"✗ Services dir not found: {services_dir}", file=sys.stderr)
         return 1
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = build_client()
+    print(f"→ backend: {get_backend()}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
